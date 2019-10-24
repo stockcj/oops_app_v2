@@ -40,26 +40,32 @@
       return new Promise(function(resolve, reject) {
         client.get('ticket.comment').then(function(data) {
           var comment_text = data['ticket.comment']['text'];
-          if (comment_text.length < 1) {return true;};
           var tick = getDelay();
-          if (tick <= 0) { return true; };
-          client.context().then(function(context){
-            var parent_guid = context.instanceGuid;
-            var options = {
-              location: 'modal',
-              url: 'assets/iframe.html#parent_guid=' + parent_guid
-            }
-            return client.invoke('instances.create', options).then(function(data) {
-              var instanceGuid = data['instances.create'][0].instanceGuid;
-              var modalClient = client.instance(instanceGuid);
-              modalClient.on('modal.save', function() {
-                resolve();
+          if (comment_text.length < 8 || tick <= 0) {
+            resolve();
+          } else {
+            client.context().then(function(context){
+              var parent_guid = context.instanceGuid;
+              var options = {
+                location: 'modal',
+                url: 'assets/iframe.html#parent_guid=' + parent_guid
+              }
+              return client.invoke('instances.create', options).then(function(data) {
+                var instanceGuid = data['instances.create'][0].instanceGuid;
+                var modalClient = client.instance(instanceGuid);
+                modalClient.on('modal.save', function() {
+                  resolve();
+                });
+                modalClient.on('modal.cancel', function() {
+                  reject('Cancel');
+                });
+                modalClient.on('modal.close', function() {
+                  stopped = true;
+                  reject('Cancel');
+                });
               });
-              modalClient.on('modal.cancel', function() {
-                reject('Cancel');
-              })
-            });
-          })
+            })
+          };
         })
       })
     }
@@ -101,6 +107,7 @@
 
     ModalApp.prototype = {
       render: function() {
+        client.invoke('resize', { height: '40vh', width: '40vw'});
         mainEl().html(`
           <h2 class="u-gamma u-light">You wrote the below message:</h2>
           <hr />
@@ -124,7 +131,6 @@
         });
         var params = this.parseParams(window.location.hash);
         var pc = this.getParentClient(params.parent_guid);
-        client.invoke('resize', { height: '40vh', width: '40vw'})
         tick = getDelay();
         this.setComment(pc);
         this.setTick(tick);
@@ -161,12 +167,14 @@
           if (stopped) {
             clearInterval(tickTimer);
             client.trigger('modal.cancel');
+            client.invoke('destroy');
           } else {
             tick--;
             $('#tick_timer').text(tick);
             if (tick === 0) {
               clearInterval(tickTimer);
               client.trigger('modal.save');
+              client.invoke('destroy');
             }
           }
         }, 1000);
