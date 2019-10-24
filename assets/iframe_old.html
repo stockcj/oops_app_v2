@@ -1,0 +1,97 @@
+<html>
+<head>
+  <meta charset="utf-8">
+  <!-- Zendesk CSS styles -->
+  <link rel="stylesheet" href="https://assets.zendesk.com/apps/sdk-assets/css/2/zendesk_garden.css" type="text/css">
+  <script src="https://code.jquery.com/jquery-3.1.1.min.js"></script>
+</head>
+<body>
+  <div id="delay-settings">
+    <span id="delay-settings-label">Ticket submissions delay seconds</span>
+    <select id="delay-settings-dropdown"  class="c-txt__input c-txt__input--select">
+        <option value="0">Off</option>
+        <option value="3">3</option>
+        <option value="5">5</option>
+        <option value="7">7</option>
+        <option value="10">10</option>
+    </select>
+  </div>
+  <div id='cancel-ticket-submit'></div>
+  <br/>
+  <div id="modalData"></div>
+  <!-- zaf_sdk.js is what allows this iFramed JavaScript app to communicate out to the parent/agent UI. -->
+  <script type="text/javascript" src="https://assets.zendesk.com/apps/sdk/2.0/zaf_sdk.js"></script>
+  <script>
+    let client = ZAFClient.init();
+    client.invoke('resize', { width: '100%', height: 'auto' });
+    client.on('ticket.save', save);
+    const cancelMessage = "<a tabindex='-1' onclick='$(\"#cancel-ticket-submit\").trigger(\"click\");'><strong>Cancel submission</strong></a>";
+    const cancelledMessage = "Your ticket submission was cancelled";
+    client.metadata().then(function(metadata) {
+      if (!metadata.settings.allow_agents_choose_timeout) {
+        $('#delay-settings').hide();
+        localStorage.removeItem('ticketSubmissionUserDelay');
+      }
+    });
+    delay = getDelay();
+    localStorage.setItem('ticketSubmissionUserDelay', delay)
+    $("#delay-settings-dropdown").val(delay);
+    
+    function updateSettings() {
+      var userDelay = parseInt($('#delay-settings-dropdown').children("option:selected").val(), 10);
+      localStorage.setItem('ticketSubmissionUserDelay', userDelay);
+      console.debug(userDelay);
+    }
+
+    function getDelay() {
+      var myDelay = localStorage.getItem('ticketSubmissionUserDelay');
+      if (myDelay !== 0 && !myDelay) {
+        myDelay = 10;
+      };
+      return myDelay;
+    }
+
+    function sleep(time) {
+      return new Promise((resolve) => setTimeout(resolve, time));
+    }
+
+    function save() {
+      return new Promise((resolve, reject) => {
+
+        var tick = getDelay();
+        if (tick <= 0) { return true; };
+
+        client.get('comment.text').then(function(data) {
+          var comment_text = data['comment.text'];
+          if (comment_text.length < 8) {
+            return true;
+          } else {
+            return client.invoke('instances.create', {
+              location: 'modal',
+              url: 'assets/modal.html'
+            }).then(function(data) {
+              var instanceGuid = data['instances.create'][0].instanceGuid;
+              var modalClient = client.instance(instanceGuid);
+              var commentAndTick = {'tick': tick, 'comment':  comment_text};
+              sleep(500).then(() => {
+                modalClient.trigger('sending_parent_client_guid', client._instanceGuid);
+                modalClient.trigger('sending_comment_and_tick', JSON.stringify(commentAndTick));
+              });
+              client.on('modal.save', function() {
+                console.log('save hit');
+                modalClient.invoke('destroy');
+                resolve();
+              });
+              client.on('modal.cancel', function() {
+                console.log('cancel hit');
+                modalClient.invoke('destroy');
+                reject(cancelledMessage);
+              });
+            });
+          };
+        });
+      })
+    }
+  </script>
+</body>
+</html>

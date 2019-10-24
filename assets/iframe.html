@@ -6,133 +6,179 @@
   <script src="https://code.jquery.com/jquery-3.1.1.min.js"></script>
 </head>
 <body>
-  <div id="delay-settings">
-    <span id="delay-settings-label">Ticket submissions delay seconds</span>
-    <select id="delay-settings-dropdown"  class="c-txt__input c-txt__input--select">
-        <option value="0">Off</option>
-        <option value="3">3</option>
-        <option value="5">5</option>
-        <option value="7">7</option>
-        <option value="10">10</option>
-    </select>
-  </div>
-  <div id='cancel-ticket-submit'></div>
-  <br/>
-  <div id="modalData"></div>
-  <!-- zaf_sdk.js is what allows this iFramed JavaScript app to communicate out to the parent/agent UI. -->
+  <section data-main>Loading...</section>
   <script type="text/javascript" src="https://assets.zendesk.com/apps/sdk/2.0/zaf_sdk.js"></script>
+  <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/lodash.js/4.17.4/lodash.min.js"></script>
   <script>
-    let client = ZAFClient.init();
-    client.invoke('resize', { width: '100%', height: 'auto' });
+    var stopped;
+    var tickTimer;
+    var delay;
+
+    var client = ZAFClient.init();
+
+    client.on('ticket.submit.always', cleanTimer);
     client.on('ticket.save', save);
-    const cancelMessage = "<a tabindex='-1' onclick='$(\"#cancel-ticket-submit\").trigger(\"click\");'><strong>Cancel submission</strong></a>";
-    const cancelledMessage = "Your ticket submission was cancelled";
-    client.metadata().then(function(metadata) {
-      if (!metadata.settings.allow_agents_choose_timeout) {
-        $('#delay-settings').hide();
-        localStorage.removeItem('ticketSubmissionUserDelay');
-      }
-    });
-    delay = getDelay();
-    localStorage.setItem('ticketSubmissionUserDelay', delay)
-    $("#delay-settings-dropdown").val(delay);
-    
-    function updateSettings() {
-      var userDelay = parseInt($('#delay-settings-dropdown').children("option:selected").val(), 10);
-      localStorage.setItem('ticketSubmissionUserDelay', userDelay);
-      console.debug(userDelay);
+
+    function init(location) {
+      location === 'modal' ? new ModalApp() : new TicketApp();
+    }
+
+    function mainEl() {
+      return $('section[data-main]');
     }
 
     function getDelay() {
-      var myDelay = localStorage.getItem('ticketSubmissionUserDelay');
-      if (myDelay !== 0 && !myDelay) {
-        myDelay = 10;
-      };
+      var myDelay = localStorage.getItem('ticketSubmissionUserDelay') || 10;
       return myDelay;
     }
 
-    function sleep(time) {
-      return new Promise((resolve) => setTimeout(resolve, time));
+    function cleanTimer() {
+      clearInterval(tickTimer);
     }
 
     function save() {
-      return new Promise((resolve, reject) => {
-
-        var tick = getDelay();
-        if (tick <= 0) { return true; };
-
-        client.get('comment.text').then(function(data) {
-          var comment_text = data['comment.text'];
-          if (comment_text.length < 8) {
-            return true;
-          } else {
-            return client.invoke('instances.create', {
+      return new Promise(function(resolve, reject) {
+        client.get('ticket.comment').then(function(data) {
+          var comment_text = data['ticket.comment']['text'];
+          if (comment_text.length < 1) {return true;};
+          var tick = getDelay();
+          if (tick <= 0) { return true; };
+          client.context().then(function(context){
+            var parent_guid = context.instanceGuid;
+            var options = {
               location: 'modal',
-              url: 'assets/modal.html'
-            }).then(function(data) {
+              url: 'assets/iframe.html#parent_guid=' + parent_guid
+            }
+            return client.invoke('instances.create', options).then(function(data) {
               var instanceGuid = data['instances.create'][0].instanceGuid;
               var modalClient = client.instance(instanceGuid);
-              var commentAndTick = {'tick': tick, 'comment':  comment_text};
-              sleep(500).then(() => {
-                modalClient.trigger('sending_parent_client_guid', client._instanceGuid);
-                modalClient.trigger('sending_comment_and_tick', JSON.stringify(commentAndTick));
-              });
-              client.on('modal.save', function() {
-                console.log('save hit');
-                modalClient.invoke('destroy');
+              modalClient.on('modal.save', function() {
                 resolve();
               });
-              client.on('modal.cancel', function() {
-                console.log('cancel hit');
-                modalClient.invoke('destroy');
-                reject(cancelledMessage);
-              });
+              modalClient.on('modal.cancel', function() {
+                reject('Cancel');
+              })
             });
-          };
-        });
+          })
+        })
       })
     }
-    
-    
-    
-    
-    
-    
-    
-    
-    function displayModal() {
-      return client.invoke('instances.create', {
-        location: 'modal',
-        url: 'assets/modal.html'
-      }).then(function(data) {
-        var instanceGuid = data['instances.create'][0].instanceGuid;
-        var modalClient = client.instance(instanceGuid);
-        // Send modal this client's instance guid via trigger data.
-        // The modal will use the guid to get a client instance back to this parent.
-        // A delay is needed for modal to be instantiated for trigger receiver to be set up.
-        sleep(500).then(() => {
-          modalClient.trigger('sending_parent_client_guid', client._instanceGuid);
+
+    var TicketApp = function() {
+      delay = localStorage.getItem('ticketSubmissionUserDelay') || 10;
+      this.render(delay);
+    }
+
+    TicketApp.prototype = {
+      render: function(delay) {
+        mainEl().html(`
+          <div id="delay-settings">
+            <span id="delay-settings-label">Ticket submissions delay seconds</span>
+            <select id="delay-settings-dropdown"  class="c-txt__input c-txt__input--select">
+              <option value="0">Off</option>
+              <option value="3">3</option>
+              <option value="5">5</option>
+              <option value="7">7</option>
+              <option value="10">10</option>
+            </select>
+          </div>
+        `);
+        $("#delay-settings-dropdown").val(delay);
+        $('#delay-settings-dropdown').change(this.updateSettings);
+        client.invoke('resize', { width: '100%', height: 'auto' });
+      },
+
+      updateSettings: function() {
+        var userDelay = parseInt($('#delay-settings-dropdown').children('option:selected').val(), 10);
+        localStorage.setItem('ticketSubmissionUserDelay', userDelay);
+      },
+
+    };
+
+    var ModalApp = function() {
+      this.render();
+    };
+
+    ModalApp.prototype = {
+      render: function() {
+        mainEl().html(`
+          <h2 class="u-gamma u-light">You wrote the below message:</h2>
+          <hr />
+          <div id="container">
+            <p id="message_to_save"></p>
+          </div>
+          <div id="footer">
+            <p id="timer_message">Time Remaining: &nbsp; &nbsp;<span id="tick_timer">10</span></p>
+            <button id="save-ticket-submit" class="c-btn c-btn--small c-btn--pill c-btn--primary">Save</button>
+            <button id="cancel-ticket-submit" class="c-btn c-btn--small c-btn--pill">Abort</button>
+          </div>
+        `);
+        $('#cancel-ticket-submit').click(function() {
+          stopped = true;
+          client.trigger('modal.cancel');
+          client.invoke('destroy');
         });
-      });
-    }
-    function addTagsToTicket(tagArray) {
-      client.invoke('ticket.tags.add', tagArray);
-    }
-    // Get data back from modal via trigger data.
-    // Look for this line in modal.html: parentClient.trigger('sending_modal_data', JSON.stringify(tagsToAdd));
-    client.on('sending_modal_data', (modalData) => {
-      console.debug('sending_modal_data event called...');
-      console.debug(modalData);
-      // Assume data in array format.
-      let tagArray = JSON.parse(modalData);
-      console.debug("tagArray:", tagArray);
-      $("#modalData").html($("#modalData").html() + "<br/>" + modalData);
-      addTagsToTicket(tagArray);
+        $('#save-ticket-submit').click(function() {
+          client.trigger('modal.save');
+          client.invoke('destroy');
+        });
+        var params = this.parseParams(window.location.hash);
+        var pc = this.getParentClient(params.parent_guid);
+        client.invoke('resize', { height: '40vh', width: '40vw'})
+        tick = getDelay();
+        this.setComment(pc);
+        this.setTick(tick);
+        this.startTimer(tick);
+      },
+
+      parseParams: function(param_string) {
+        var param_sub = param_string.replace('#', '').split('&');
+        var param_obj = _.reduce(param_sub, function(memo, k) {
+          kv = k.split('=');
+          memo[kv[0]] = kv[1];
+          return memo
+        }, {});
+        return param_obj;
+      },
+
+      getParentClient: function(parent_guid) {
+        return client.instance(parent_guid)
+      },
+
+      setTick: function(tick) {
+        $('#tick_timer').text(tick);
+      },
+
+      setComment: function(parent_client) {
+        parent_client.get('ticket.comment').then(function(data) {
+          var comment_text = data['ticket.comment']['text'];
+          $('div#container').append(comment_text);
+        })
+      },
+
+      startTimer: function(tick) {
+        tickTimer = setInterval(function () {
+          if (stopped) {
+            clearInterval(tickTimer);
+            client.trigger('modal.cancel');
+          } else {
+            tick--;
+            $('#tick_timer').text(tick);
+            if (tick === 0) {
+              clearInterval(tickTimer);
+              client.trigger('modal.save');
+            }
+          }
+        }, 1000);
+      }
+
+
+    };
+
+    client.on('app.registered', function(data) {
+      init(data.context.location);
     });
-    $(document).ready(function(){
-      $("#displayModal").click(() => displayModal());
-      $('#delay-settings-dropdown').change(() => updateSettings());
-    });
+
   </script>
 </body>
 </html>
