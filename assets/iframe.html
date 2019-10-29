@@ -1,8 +1,11 @@
-<html>
+<!DOCTYPE html>
+<html style="overflow-y: auto;">
 <head>
   <meta charset="utf-8">
-  <!-- Zendesk CSS styles -->
-  <link rel="stylesheet" href="https://assets.zendesk.com/apps/sdk-assets/css/2/zendesk_garden.css" type="text/css">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <!-- Bulma CSS Styles -->
+  <link href="https://cdn.jsdelivr.net/npm/bulma@0.8.0/css/bulma.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bulma-extensions@6.2.7/bulma-divider/dist/css/bulma-divider.min.css" rel="stylesheet">
   <script src="https://code.jquery.com/jquery-3.1.1.min.js"></script>
 </head>
 <body>
@@ -57,11 +60,11 @@
                   resolve();
                 });
                 modalClient.on('modal.cancel', function() {
-                  reject('Cancel');
+                  reject('Ticket submission has been cancelled.');
                 });
                 modalClient.on('modal.close', function() {
                   stopped = true;
-                  reject('Cancel');
+                  reject('Ticket submission has been cancelled.');
                 });
               });
             })
@@ -78,17 +81,34 @@
     TicketApp.prototype = {
       render: function(delay) {
         mainEl().html(`
-          <div id="delay-settings">
-            <span id="delay-settings-label">Ticket submissions delay seconds</span>
-            <select id="delay-settings-dropdown"  class="c-txt__input c-txt__input--select">
-              <option value="0">Off</option>
-              <option value="3">3</option>
-              <option value="5">5</option>
-              <option value="7">7</option>
-              <option value="10">10</option>
-            </select>
+        <section style="padding: 1.5rem">
+          <div class="container">
+            <div id="delay-settings" class="level">
+              <div class="level-item">
+                <p id="delay-settings-label">Ticket submission delay timeout (seconds):</p>
+              </div>
+              <div class="level-item">
+                <div class="select">
+                  <select id="delay-settings-dropdown">
+                    <option value="0">Off</option>
+                    <option value="5">5</option>
+                    <option value="10">10</option>
+                    <option value="15">15</option>
+                    <option value="20">20</option>
+                    <option value="25">25</option>
+                  </select>
+                </div>
+              </div>
+            </div>
           </div>
+        </section>
         `);
+        client.metadata().then(function(metadata) {
+          if (!metadata.settings.allow_agents_choose_timeout) {
+            $('#delay-settings').hide();
+            localStorage.removeItem('ticketSubmissionUserDelay');
+          }
+        });
         $("#delay-settings-dropdown").val(delay);
         $('#delay-settings-dropdown').change(this.updateSettings);
         client.invoke('resize', { width: '100%', height: 'auto' });
@@ -107,18 +127,29 @@
 
     ModalApp.prototype = {
       render: function() {
-        client.invoke('resize', { height: '40vh', width: '40vw'});
+        client.invoke('resize', { height: '60vh', width: '50vw'}); 
         mainEl().html(`
-          <h2 class="u-gamma u-light">You wrote the below message:</h2>
-          <hr />
-          <div id="container">
-            <p id="message_to_save"></p>
-          </div>
-          <div id="footer">
-            <p id="timer_message">Time Remaining: &nbsp; &nbsp;<span id="tick_timer">10</span></p>
-            <button id="save-ticket-submit" class="c-btn c-btn--small c-btn--pill c-btn--primary">Save</button>
-            <button id="cancel-ticket-submit" class="c-btn c-btn--small c-btn--pill">Abort</button>
-          </div>
+          <section style="padding: 1rem 1.5rem">
+            <p class="is-size-5 has-text-weight-semi-bold">Confirm submission of the following message:</p>
+          </section>
+          <hr style="border: 1px solid #ddd">
+          <section style="padding: 1rem 2.5rem; max-height: 325px; overflow-y: auto;">
+            <div id="container"></div>
+          </section>
+          <hr style="border: 1px solid #ddd">
+          <section style="padding: 1rem 1.5rem">
+            <div class="columns is-mobile">
+              <div class="column">
+                <p id="timer_message" class="is-size-5 has-text-weight-semi-bold">Time Remaining: &nbsp; &nbsp;<span id="tick_timer" class="has-text-danger">10</span></p>
+              </div>
+              <div class="column">
+                <div class="is-pulled-right">
+                  <button id="cancel-ticket-submit" class="button is-link is-outlined is-medium">Cancel</button>
+                  <button id="save-ticket-submit" class="button is-link is-medium">Confirm</button>
+                </div>
+              </div>
+            </div>
+          </section>
         `);
         $('#cancel-ticket-submit').click(function() {
           stopped = true;
