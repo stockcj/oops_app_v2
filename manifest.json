@@ -1,9 +1,8 @@
 {
-  "name": "Oops v2",
+  "name": "Cancel ticket submission",
   "author": {
     "name": "Christopher Stock",
-    "email": "stock.c@cambridgeenglish.org",
-    "url": ""
+    "email": "stock.c@cambridgeenglish.org"
   },
   "defaultLocale": "en",
   "private": true,
