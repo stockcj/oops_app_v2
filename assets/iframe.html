@@ -133,7 +133,9 @@
           </section>
           <hr style="border: 1px solid #ddd">
           <section style="padding: 1rem 2.5rem; max-height: 325px; overflow-y: auto;">
-            <div id="container"></div>
+            <p class="is-size-5", id="comment-type", style="margin-bottom: 5px; font-weight: bold;"></p>
+            <div id="container", style="padding: 10px; border-radius: 5px;">
+            </div>
           </section>
           <div style="position: absolute; bottom: 0px; width: 100%;">
           <hr style="border: 1px solid #ddd">
@@ -190,6 +192,13 @@
       setComment: function(parent_client) {
         parent_client.get('ticket.comment').then(function(data) {
           var comment_text = data['ticket.comment']['text'];
+          var comment_type = data['ticket.comment']['type'];
+          if (comment_type === 'internalNote') {
+            $('div#container').css('background-color', '#FFF6D9');
+            $('p#comment-type').text('Internal Note');
+          } else {
+            $('p#comment-type').text('Public Reply');
+          }
           $('div#container').append(comment_text);
         })
       },
